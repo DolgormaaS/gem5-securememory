@@ -515,7 +515,7 @@ bool
 CounterModeEncryption::MemSidePort::recvTimingResp(PacketPtr pkt)
 {
     assert(getAddrRanges().size() == 1);
-    if (pkt->getAddr() > getAddrRanges().front().end()) {
+    if (parent->isCounter(pkt->getAddr())) {
         // this is an encryption counter
         if (parent->use_metadata_cache) {
             parent->metadata_response_port.sendPacket(pkt);
