@@ -72,7 +72,7 @@ from gem5.utils.requires import requires
 requires(
     isa_required=ISA.X86,
     coherence_protocol_required=CoherenceProtocol.MESI_TWO_LEVEL,
-    kvm_required=True,
+    kvm_required=False,
 )
 
 parser = argparse.ArgumentParser(
@@ -186,15 +186,15 @@ memory = IntegrityTreeProtectedMemory(
 # cores for the command we wish to run after boot.
 
 processor = SimpleSwitchableProcessor(
-    starting_core_type=CPUTypes.KVM,
+    starting_core_type=CPUTypes.O3,
     switch_core_type=CPUTypes.TIMING,
     isa=ISA.X86,
     num_cores=2,
 )
 
 # Here we tell the KVM CPU (the starting CPU) not to use perf.
-for proc in processor.start:
-    proc.core.usePerf = False
+# for proc in processor.start:
+#    proc.core.usePerf = False
 
 # Here we setup the board. The X86Board allows for Full-System X86 simulations
 
@@ -246,7 +246,7 @@ simulator = Simulator(
 globalStart = time.time()
 
 print("Running the simulation")
-print("Using KVM cpu")
+# print("Using KVM cpu")
 
 # There are a few thihngs to note regarding the gapbs benchamrks. The first is
 # that there are several ROI annotations in the code present in the disk image.
