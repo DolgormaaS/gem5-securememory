@@ -38,6 +38,7 @@
 #include "debug/PMP.hh"
 #include "math.h"
 #include "mem/request.hh"
+#include "mem/secure_memory/epmp.hh"
 #include "params/PMP.hh"
 #include "sim/sim_object.hh"
 
@@ -50,9 +51,16 @@ namespace RiscvISA
 PMP::PMP(const Params &params) :
     SimObject(params),
     pmpEntries(params.pmp_entries),
-    numRules(0)
+    numRules(0),
+    epmp(params.epmp),
+    coreId(params.core_id)
 {
     pmpTable.resize(pmpEntries);
+
+    for (size_t i = 0; i < params.enc_regions.size(); i++) {
+        const auto &r = params.enc_regions[i];
+        setEncRegion(i, r.start(), r.size());
+    }
 }
 
 Fault
@@ -156,7 +164,6 @@ PMP::pmpGetAField(uint8_t cfg)
     return a & 0x03;
 }
 
-
 bool
 PMP::pmpUpdateCfg(uint32_t pmp_index, uint8_t this_cfg)
 {
@@ -174,8 +181,28 @@ PMP::pmpUpdateCfg(uint32_t pmp_index, uint8_t this_cfg)
                 pmp_index);
         return false;
     }
+
+    // NEW: remember old cfg to detect enc-region create/delete
+    uint8_t old_cfg = pmpTable[pmp_index].pmpCfg;
+
     pmpTable[pmp_index].pmpCfg = this_cfg;
     pmpUpdateRule(pmp_index);
+
+    // NEW: paper's create/delete entry commands to the MEE's ePMP
+    bool was_enc = (old_cfg & PMP_ENC) && pmpGetAField(old_cfg) != PMP_OFF;
+    bool is_enc  = (this_cfg & PMP_ENC) && pmpGetAField(this_cfg) != PMP_OFF;
+
+    if (epmp) {
+        if (!was_enc && is_enc) {
+            DPRINTF(PMP, "enc entry %u created -> ePMP\n", pmp_index);
+            epmp->createEntry(coreId, pmp_index,
+                              pmpTable[pmp_index].pmpAddr);
+        } else if (was_enc && !is_enc) {
+            DPRINTF(PMP, "enc entry %u deleted -> ePMP\n", pmp_index);
+            epmp->deleteEntry(coreId, pmp_index);
+        }
+    }
+
     return true;
 }
 
@@ -235,6 +262,54 @@ PMP::pmpReset()
         pmpTable[i].pmpCfg &= ~(PMP_A_MASK | PMP_LOCK);
         pmpUpdateRule(i);
     }
+}
+
+bool
+PMP::isEncRegion(Addr paddr, unsigned size) const
+{
+    if (numRules == 0)
+        return false;
+
+    // Same matching rule as pmpCheck: lowest-numbered active entry
+    // containing both the first and last byte wins.
+    for (const auto &e : pmpTable) {
+        const uint8_t a_field = (e.pmpCfg >> 3) & 0x3;
+        if (a_field == PMP_OFF)
+            continue;
+        if (e.pmpAddr.contains(paddr) &&
+            e.pmpAddr.contains(paddr + size - 1)) {
+            return (e.pmpCfg & PMP_ENC) != 0;
+        }
+    }
+    return false;
+}
+
+bool
+PMP::setEncRegion(uint32_t idx, Addr base, Addr size)
+{
+    panic_if(size < 8 || (size & (size - 1)),
+             "setEncRegion: size %#x must be a power of two >= 8", size);
+    panic_if(base & (size - 1),
+             "setEncRegion: base %#x not aligned to size %#x", base, size);
+
+    // NAPOT encoding: pmpaddr = (base >> 2) | (size/8 - 1)
+    Addr napot = (base >> 2) | ((size >> 3) - 1);
+    if (!pmpUpdateAddr(idx, napot))
+        return false;
+
+    uint8_t cfg = PMP_READ | PMP_WRITE | PMP_EXEC |
+                  (PMP_NAPOT << 3) | PMP_ENC;
+
+    DPRINTF(PMP, "setEncRegion: entry %u -> [%#x, %#x) enc\n",
+            idx, base, base + size);
+    return pmpUpdateCfg(idx, cfg);
+}
+
+bool
+PMP::clearEncRegion(uint32_t idx)
+{
+    DPRINTF(PMP, "clearEncRegion: entry %u\n", idx);
+    return pmpUpdateCfg(idx, 0);
 }
 
 bool

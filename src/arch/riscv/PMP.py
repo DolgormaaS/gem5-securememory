@@ -35,3 +35,5 @@ class PMP(SimObject):
     cxx_class = "gem5::RiscvISA::PMP"
 
     pmp_entries = Param.Int(16, "Maximum PMP Entries Supported")
+    epmp = Param.EPMP(NULL, "System-wide ePMP table (secure memory)")
+    core_id = Param.Unsigned(0, "Core index for ePMP entries")

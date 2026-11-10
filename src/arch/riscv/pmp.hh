@@ -47,6 +47,8 @@
 namespace gem5
 {
 
+namespace memory { class EPMP; }
+
 namespace RiscvISA
 {
 
@@ -96,8 +98,19 @@ class PMP : public SimObject
     /** pmpcfg address range locked mask */
     const uint8_t PMP_LOCK = 1 << 7;
 
+    /** NEW: secure-memory enc bit (reserved bit 5 of pmpcfg).
+     *  Requests matching an entry with this bit set are tagged
+     *  as secure and routed through the MEE. */
+    const uint8_t PMP_ENC = 1 << 5;
+
     /** variable to keep track of active number of rules any time */
     int numRules;
+
+    /* system-wide ePMP table (nullptr if secure memory unused) */
+    memory::EPMP *epmp;
+
+    /* this core's index, used to address ePMP entries */
+    unsigned coreId;
 
     /** single pmp entry struct*/
     struct PmpEntry : public Serializable
@@ -168,7 +181,28 @@ class PMP : public SimObject
      */
     void pmpReset();
 
+    /**
+     * NEW: returns true if [paddr, paddr+size) falls inside an
+     * active PMP entry whose enc bit is set. Tag-only lookup,
+     * no permission check. Uses the same first-match priority
+     * as pmpCheck.
+     */
+    bool isEncRegion(Addr paddr, unsigned size) const;
+
+    /**
+     * NEW: program entry `idx` as an encrypted NAPOT region.
+     * Stands in for the Keystone security monitor in SE mode,
+     * where user code can't write PMP CSRs.
+     * size must be a power of two >= 8 and base aligned to size.
+     */
+    bool setEncRegion(uint32_t idx, Addr base, Addr size);
+
+    /** NEW: disable entry `idx` (paper's "delete entry"). */
+    bool clearEncRegion(uint32_t idx);
+
   private:
+    memory::EPMP *epmp;
+    unsigned coreId;
     /**
      * createAddrfault creates an address fault
      * if the pmp checks fail to pass for a given

@@ -43,12 +43,15 @@
 Import('*')
 
 SimObject("SecureMemory.py", sim_objects=[
+    "EPMP",
     "DirectEncryption",
     "CounterModeEncryption",
     "MAC",
     "IntegrityTree",
 ])
 
+Source("epmp.cc")
+DebugFlag("EPMP")
 Source("direct_encryption.cc")
 Source("counter_mode_encryption.cc")
 Source("mac.cc")

@@ -606,6 +606,16 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
 
         req->setPaddr(paddr);
 
+    // NEW: secure-memory tagging (SE mode)
+        // Mirrors the paper's pmpchecker: requests that fall inside a PMP
+        // entry with the enc bit set carry a secure bit to the MEE.
+        // Tag only; no permission enforcement, so SE workloads (which run
+        // in U-mode) don't fault on entries lacking U permissions.
+        if (pmp->isEncRegion(req->getPaddr(), req->getSize())) {
+            req->setFlags(Request::SECURE);
+        }
+        //
+
         return NoFault;
     }
 }

@@ -43,6 +43,19 @@ from m5.params import *
 from m5.SimObject import SimObject
 
 
+class EPMP(SimObject):
+    type = "EPMP"
+    cxx_header = "mem/secure_memory/epmp.hh"
+    cxx_class = "gem5::memory::EPMP"
+
+    num_cores = Param.Unsigned(1, "Number of cores (N)")
+    entries_per_core = Param.Unsigned(16, "PMP entries per core (P)")
+
+    block_size = Param.Unsigned(64, "Data block size in bytes")
+    counter_arity = Param.Unsigned(64, "Data blocks per counter block")
+    tree_arity = Param.Unsigned(8, "Integrity tree arity")
+
+
 class DirectEncryption(SimObject):
     type = "DirectEncryption"
     cxx_header = "mem/secure_memory/direct_encryption.hh"
