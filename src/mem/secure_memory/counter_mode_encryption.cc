@@ -60,6 +60,7 @@ CounterModeEncryption(const CounterModeEncryptionParams *p)
      metadataRespondEvent([this] { respondMetadataCache(); }, name()),
      stats(*this)
 {
+    epmp = p->epmp;
 }
 
 Port&
@@ -105,6 +106,14 @@ CounterModeEncryption::calculateCounterAddress(Addr data_address)
 bool
 CounterModeEncryption::handleRequest(PacketPtr pkt)
 {
+    if (!isSecure(pkt->getAddr())) {
+        if (pkt->needsResponse())
+            bypassed.insert(pkt);
+        mem_port.sendPacket(pkt);
+        stats.bypassed_requests++;
+        return true;
+    }
+
     if (cipher_queue.size() == max_cipher_size) {
         return false;
     }
@@ -156,6 +165,11 @@ CounterModeEncryption::handleRequest(PacketPtr pkt)
 bool
 CounterModeEncryption::handleResponse(PacketPtr pkt)
 {
+    if (bypassed.erase(pkt)) {
+        cpu_port.sendPacket(pkt);
+        return true;
+    }
+
     assert(pkt->isResponse());
 
     if (pkt->isRead() && !parallelReadAndWrite(pkt)) {
@@ -622,7 +636,9 @@ CounterModeEncryptionStats(CounterModeEncryption &s)
       ADD_STAT(requests_processed, statistics::units::Count::get(),
                "number of handled requests from the processor side"),
       ADD_STAT(responses_processed, statistics::units::Count::get(),
-               "number of memory responses that we've handled")
+               "number of memory responses that we've handled"),
+      ADD_STAT(bypassed_requests, statistics::units::Count::get(),
+               "requests outside any ePMP region (no crypto)")
 {
 }
 

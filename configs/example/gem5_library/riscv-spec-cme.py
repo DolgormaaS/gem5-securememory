@@ -49,6 +49,17 @@ parser.add_argument("--metadata_cache_size", type=str, default="64kB")
 parser.add_argument("--no_metadata_cache", action="store_true")
 parser.add_argument("--arity", type=int, default=64)
 parser.add_argument("--encryption_latency", type=int, default=53)
+parser.add_argument(
+    "--no_epmp",
+    action="store_true",
+    help="Old behaviour: MEE protects all memory",
+)
+parser.add_argument(
+    "--secure_regions",
+    type=str,
+    default="0x0:2GiB,0x80000000:1GiB",
+    help="Comma list of base:size; each NAPOT (power-of-2 size, aligned)",
+)
 args = parser.parse_args()
 
 cache_hierarchy = MESITwoLevelCacheHierarchy(
@@ -70,6 +81,7 @@ memory = CounterModeEncryptedMemory(
 )
 
 processor = SimpleProcessor(cpu_type=CPUTypes.O3, isa=ISA.RISCV, num_cores=1)
+
 
 board = SimpleBoard(
     clk_freq="3GHz",
@@ -104,6 +116,34 @@ def handle_max_insts():
     m5.stats.dump()
     yield True  # Stop the simulation.
 
+
+from m5.objects import (
+    EPMP,
+    AddrRange,
+)
+
+N_PMP = 16
+if not args.no_epmp:
+    regions = []
+    for r in args.secure_regions.split(","):
+        base, size = r.split(":")
+        regions.append(AddrRange(int(base, 0), size=size))
+
+    cores = processor.get_cores()
+    board.epmp = EPMP(
+        num_cores=len(cores),
+        entries_per_core=N_PMP,
+        counter_arity=args.arity,
+        tree_arity=8,
+    )
+    for i, core in enumerate(cores):
+        pmp = core.get_mmu().pmp
+        pmp.pmp_entries = N_PMP
+        pmp.epmp = board.epmp
+        pmp.core_id = i
+        pmp.enc_regions = regions
+
+    memory.secure_memory.epmp = board.epmp
 
 simulator = Simulator(
     board=board,

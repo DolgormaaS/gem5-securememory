@@ -64,6 +64,7 @@ MAC::MAC(const MACParams *p)
      metadataRespondEvent([this] { respondMetadataCache(); }, name()),
      stats(*this)
 {
+    epmp = p->epmp;
 }
 
 Port&
@@ -146,6 +147,15 @@ MAC::handleRequest(PacketPtr pkt)
         schedule(responseEvent, curTick() + 1000);
     }
 
+    if (!isSecure(pkt->getAddr())) {
+        if (pkt->needsResponse())
+            bypassed.insert(pkt);
+        mem_port.sendPacket(pkt);
+        stats.bypassed_requests++;
+        return true;
+    }
+
+
     if (cipher_queue.size() == max_cipher_size) {
         return false;
     }
@@ -211,6 +221,11 @@ MAC::handleRequest(PacketPtr pkt)
 bool
 MAC::handleResponse(PacketPtr pkt)
 {
+    if (bypassed.erase(pkt)) {
+        cpu_port.sendPacket(pkt);
+        return true;
+    }
+
     assert(pkt->isResponse());
 
     if (pkt->isRead() && !parallelReadAndWrite(pkt)) {
@@ -870,7 +885,9 @@ MAC::MACStats::MACStats(MAC &s)
       ADD_STAT(requests_processed, statistics::units::Count::get(),
                "number of handled requests from the processor side"),
       ADD_STAT(responses_processed, statistics::units::Count::get(),
-               "number of memory responses that we've handled")
+               "number of memory responses that we've handled"),
+      ADD_STAT(bypassed_requests, statistics::units::Count::get(),
+               "requests outside any ePMP region (no crypto)")
 {
 }
 

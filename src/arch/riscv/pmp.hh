@@ -30,6 +30,7 @@
 #ifndef __ARCH_RISCV_PMP_HH__
 #define __ARCH_RISCV_PMP_HH__
 
+#include <vector>
 #include "arch/generic/tlb.hh"
 #include "arch/riscv/isa.hh"
 #include "base/addr_range.hh"
@@ -201,8 +202,6 @@ class PMP : public SimObject
     bool clearEncRegion(uint32_t idx);
 
   private:
-    memory::EPMP *epmp;
-    unsigned coreId;
     /**
      * createAddrfault creates an address fault
      * if the pmp checks fail to pass for a given

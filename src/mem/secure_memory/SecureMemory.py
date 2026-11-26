@@ -67,6 +67,7 @@ class DirectEncryption(SimObject):
 
     # latency is configurable
     latency = Param.UInt64(53, "Encryption latency")
+    epmp = Param.EPMP(NULL, "System-wide ePMP; NULL = protect all memory")
 
 
 class CounterModeEncryption(SimObject):
@@ -88,6 +89,8 @@ class CounterModeEncryption(SimObject):
 
     # latency is configurable
     latency = Param.UInt64(53, "Encryption latency")
+
+    epmp = Param.EPMP(NULL, "System-wide ePMP; NULL = protect all memory")
 
     # arity is configurable
     arity = Param.UInt64(64, "Counter arity")
@@ -116,6 +119,8 @@ class MAC(SimObject):
     # latency is configurable
     latency = Param.UInt64(53, "Encryption latency")
     hash_latency = Param.UInt64(2, "Hashing latency")
+
+    epmp = Param.EPMP(NULL, "System-wide ePMP; NULL = protect all memory")
 
     # arity is configurable
     counter_arity = Param.UInt64(64, "Counter arity")
@@ -146,6 +151,8 @@ class IntegrityTree(SimObject):
     # latency is configurable
     latency = Param.UInt64(53, "Encryption latency")
     hash_latency = Param.UInt64(2, "Hashing latency")
+
+    epmp = Param.EPMP(NULL, "System-wide ePMP; NULL = protect all memory")
 
     # arity is configurable
     tree_arity = Param.UInt64(8, "Tree arity")

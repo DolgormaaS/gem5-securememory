@@ -33,6 +33,7 @@
 #include "arch/riscv/isa.hh"
 #include "arch/riscv/regs/misc.hh"
 #include "base/addr_range.hh"
+#include "base/logging.hh"
 #include "base/types.hh"
 #include "cpu/thread_context.hh"
 #include "debug/PMP.hh"
@@ -57,10 +58,21 @@ PMP::PMP(const Params &params) :
 {
     pmpTable.resize(pmpEntries);
 
+    fatal_if(params.enc_regions.size() >= (size_t)pmpEntries,
+             "PMP: %d enc_regions need at least %d pmp_entries "
+             "(last one is the catch-all)",
+             params.enc_regions.size(), params.enc_regions.size() + 1);
+
     for (size_t i = 0; i < params.enc_regions.size(); i++) {
         const auto &r = params.enc_regions[i];
         setEncRegion(i, r.start(), r.size());
     }
+
+    if (!params.enc_regions.empty()) {
+        pmpUpdateAddr(pmpEntries - 1, (Addr)-1);
+        pmpUpdateCfg(pmpEntries - 1, PMP_READ | PMP_WRITE | PMP_EXEC | (PMP_NAPOT << 3));
+    }
+
 }
 
 Fault

@@ -47,6 +47,9 @@
 #include "mem/port.hh"
 #include "params/DirectEncryption.hh"
 #include "sim/sim_object.hh"
+#include <unordered_set>
+#include "mem/secure_memory/epmp.hh"
+
 
 namespace gem5::memory {
 
@@ -172,6 +175,14 @@ class DirectEncryption : public SimObject
     bool handleRequest(PacketPtr pkt); //  we will do our work here...
     bool handleResponse(PacketPtr pkt); // and here
 
+    // ePMP: only addresses inside a registered region get protection
+    EPMP *epmp = nullptr;
+    std::unordered_set<PacketPtr> bypassed;
+    bool isSecure(Addr a) const
+    {
+        return !epmp || epmp->lookup(a) != nullptr;
+    }
+
     // schedule-able function to model encryption/decryption
     void cipherEngine(); // defined in source
 
@@ -213,6 +224,7 @@ class DirectEncryption : public SimObject
 
         statistics::Scalar requests_processed;
         statistics::Scalar responses_processed;
+        statistics::Scalar bypassed_requests;
     };
 
     DirectEncryptionStats stats;

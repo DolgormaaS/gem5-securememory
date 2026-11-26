@@ -37,3 +37,9 @@ class PMP(SimObject):
     pmp_entries = Param.Int(16, "Maximum PMP Entries Supported")
     epmp = Param.EPMP(NULL, "System-wide ePMP table (secure memory)")
     core_id = Param.Unsigned(0, "Core index for ePMP entries")
+    enc_regions = VectorParam.AddrRange(
+        [AddrRange(0, size="512MB")],
+        "Physical ranges programmed as encrypted PMP entries at startup "
+        "(stands in for the Keystone security monitor in SE mode). "
+        "Each must be a power of two >= 8 and aligned to its size.",
+    )

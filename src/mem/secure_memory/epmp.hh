@@ -13,13 +13,6 @@ namespace gem5
 namespace memory
 {
 
-/**
- * Aggregated extended PMP table (Moolman & Lehman).
- * One system-wide table of N cores x P entries, kept in sync with the
- * per-core PMP tables via create/delete commands. Secure-memory stages
- * consult it by physical address, since Ruby and LLC writebacks don't
- * carry request flags or core IDs down to memory.
- */
 class EPMP : public SimObject
 {
   public:
@@ -29,6 +22,7 @@ class EPMP : public SimObject
         AddrRange range;        // copied from the core's PMP entry
         uint64_t root = 0;      // on-chip BMT root (8B)
         uint8_t treeMode = 0;   // number of tree levels for this region
+        unsigned refCount = 0;  // slots currently mapped to this region
     };
 
     PARAMS(EPMP);
@@ -40,10 +34,14 @@ class EPMP : public SimObject
     /** Paper's "delete entry" command. */
     void deleteEntry(unsigned core, unsigned idx);
 
-    /** Valid entry covering addr, or nullptr -> bypass. */
+    /** Valid region covering addr, or nullptr -> bypass. */
     const Entry *lookup(Addr addr) const;
+    Entry *lookup(Addr addr);
 
     bool isSecure(Addr addr) const { return lookup(addr) != nullptr; }
+
+    unsigned getNumCores() const { return numCores; }
+    unsigned getEntriesPerCore() const { return entriesPerCore; }
 
   private:
     unsigned numCores;
@@ -52,7 +50,11 @@ class EPMP : public SimObject
     unsigned counterArity;
     unsigned treeArity;
 
-    std::vector<Entry> table;
+    /** Region records; at most N x P distinct regions. */
+    std::vector<Entry> regions;
+
+    /** (core, idx) slot -> index into regions, -1 if unmapped. */
+    std::vector<int> slotRegion;
 
     unsigned
     slot(unsigned core, unsigned idx) const

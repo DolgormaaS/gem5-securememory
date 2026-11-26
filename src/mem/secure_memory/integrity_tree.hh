@@ -49,6 +49,8 @@
 #include "mem/port.hh"
 #include "params/IntegrityTree.hh"
 #include "sim/sim_object.hh"
+#include <unordered_set>
+#include "mem/secure_memory/epmp.hh"
 
 #define PAGE_SIZE 4096
 #define BLOCK_SIZE 64
@@ -328,6 +330,14 @@ class IntegrityTree : public SimObject
     bool handleRequest(PacketPtr pkt); //  we will do our work here...
     void handleMetadataCacheMiss(PacketPtr pkt); // and here (for misses)
     bool handleResponse(PacketPtr pkt); // and here
+
+    // ePMP: only addresses inside a registered region get protection
+    EPMP *epmp = nullptr;
+    std::unordered_set<PacketPtr> bypassed;
+    bool isSecure(Addr a) const
+    {
+        return !epmp || epmp->lookup(a) != nullptr;
+    }
     bool processCounterResponse(PacketPtr pkt); // and here
     bool handleCounterResponse(PacketPtr pkt); // and here
     bool handleTreeResponse(PacketPtr pkt); // and here
@@ -402,6 +412,7 @@ class IntegrityTree : public SimObject
 
         statistics::Scalar requests_processed;
         statistics::Scalar responses_processed;
+        statistics::Scalar bypassed_requests;
     };
 
     IntegrityTreeStats stats;
