@@ -42,6 +42,10 @@
 
 #include "mem/secure_memory/integrity_tree.hh"
 
+#include "base/logging.hh"
+#include "base/trace.hh"
+#include "debug/EPMP.hh"
+
 namespace gem5::memory {
 
 IntegrityTree::IntegrityTree(const IntegrityTreeParams *p)
@@ -102,6 +106,10 @@ IntegrityTree::startup()
     integrity_levels.push_front(end); // mac
 
     integrity_levels.shrink_to_fit(); // C++ data structures... meh :/
+
+    warn_if(epmp && !bonsai,
+            "IntegrityTree: per-region roots need bonsai mode; "
+            "using the global tree root for all regions");
 }
 
 Port&
@@ -259,6 +267,40 @@ IntegrityTree::calculateParentAddress(Addr meta_addr)
     return (Addr) -1;
 }
 
+Addr
+IntegrityTree::regionRoot(Addr data_addr)
+{
+    // The region's root is the lowest node covering all of its counters.
+    // NAPOT regions map onto exactly one subtree, so this is treeMode
+    // levels above the counters (capped at the global root).
+    const EPMP::Entry *e = epmp->lookup(data_addr);
+    assert(e);
+
+    auto it = region_roots.find(e->range.start());
+    if (it != region_roots.end())
+        return it->second;
+
+    Addr a = calculateCounterAddress(e->range.start());
+    Addr b = calculateCounterAddress(e->range.end() - 1);
+    unsigned levels = 0;
+    while (a != b) {
+        a = calculateParentAddress(a);
+        b = calculateParentAddress(b);
+        levels++;
+    }
+
+    warn_if(levels != e->treeMode && a != integrity_levels[1],
+            "IntegrityTree: region %s root is %u levels up but ePMP "
+            "treeMode is %u (arity mismatch between ePMP and engine?)",
+            e->range.to_string(), levels, e->treeMode);
+
+    region_roots[e->range.start()] = a;
+    onchip_roots.insert(a);
+    DPRINTF(EPMP, "region %s: on-chip root %#x, %u levels above "
+            "counters\n", e->range.to_string(), a, levels);
+    return a;
+}
+
 bool
 IntegrityTree::handleRequest(PacketPtr pkt)
 {
@@ -269,6 +311,9 @@ IntegrityTree::handleRequest(PacketPtr pkt)
         stats.bypassed_requests++;
         return true;
     }
+
+    if (epmp && bonsai)
+        regionRoot(pkt->getAddr()); // make sure this region's root is known
 
     if (cipher_queue.size() == max_cipher_size) {
         return false;
@@ -351,7 +396,8 @@ IntegrityTree::handleMetadataCacheMiss(PacketPtr pkt)
     assert(isMetadata(pkt->getAddr()));
     assert(!isMac(pkt->getAddr()) || cache_mac);
 
-    if (!isMac(pkt->getAddr()) && pkt->getAddr() < integrity_levels[1]) {
+    if (!isMac(pkt->getAddr()) && pkt->getAddr() < integrity_levels[1] &&
+        !isOnChipRoot(pkt->getAddr())) {
         // this is a tree node, we need to track the miss
         if ((!isMac(pkt->getAddr()) && !isCounter(pkt->getAddr())) ||
             (bonsai && isCounter(pkt->getAddr())) ||
@@ -368,7 +414,9 @@ IntegrityTree::handleMetadataCacheMiss(PacketPtr pkt)
         }
     }
 
-    if (eager_fetch && pkt->getAddr() < integrity_levels[1]) {
+    if (eager_fetch && pkt->getAddr() < integrity_levels[1] &&
+        !isOnChipRoot(pkt->getAddr()) &&
+        !isOnChipRoot(calculateParentAddress(pkt->getAddr()))) {
         Addr parent_addr = calculateParentAddress(pkt->getAddr());
         RequestPtr req = std::make_shared<Request>(
             parent_addr, BLOCK_SIZE, 0, 0
@@ -521,6 +569,16 @@ IntegrityTree::handleTreeResponse(PacketPtr pkt)
     {
         // check if our parent has already returned
         Addr parent_addr = calculateParentAddress(pkt->getAddr());
+
+        if (isOnChipRoot(parent_addr)) {
+            // parent is the region root held in the ePMP: no fetch needed
+            initiateMac(pkt);
+            stats.onchip_root_verifications++;
+            needs_authentication[pkt->getAddr()]--;
+            if (needs_authentication[pkt->getAddr()] == 0)
+                needs_authentication.erase(pkt->getAddr());
+            return true;
+        }
         bool authenticated = false;
         for (auto it = awaiting_child.begin();
                   it != awaiting_child.end();
@@ -770,8 +828,12 @@ IntegrityTree::updateTree(PacketPtr pkt)
 
     // make parent packets
     Addr addr = bonsai ? ctr_addr : mac_addr;
-    do {
+    while (addr != integrity_levels[1] && !isOnChipRoot(addr)) {
         addr = calculateParentAddress(addr);
+        if (isOnChipRoot(addr)) {
+            stats.onchip_root_updates++;
+            break; // root lives in the ePMP: updated on-chip
+        }
 
         RequestPtr req = std::make_shared<Request>(addr, BLOCK_SIZE, 0, 0);
         PacketPtr pkt = Packet::createWrite(req);
@@ -783,7 +845,7 @@ IntegrityTree::updateTree(PacketPtr pkt)
         } else {
             mem_port.sendPacket(pkt); // send tree node to memory
         }
-    } while (addr != integrity_levels[1]);
+    }
 
     // make mac packet
     RequestPtr mac_req = std::make_shared<Request>(mac_addr, BLOCK_SIZE, 0, 0);
@@ -1221,7 +1283,11 @@ IntegrityTree::IntegrityTreeStats::IntegrityTreeStats(IntegrityTree &s)
       ADD_STAT(responses_processed, statistics::units::Count::get(),
                "number of memory responses that we've handled"),
       ADD_STAT(bypassed_requests, statistics::units::Count::get(),
-               "requests outside any ePMP region (no crypto)")
+               "requests outside any ePMP region (no crypto)"),
+      ADD_STAT(onchip_root_verifications, statistics::units::Count::get(),
+               "tree nodes verified directly against an on-chip root"),
+      ADD_STAT(onchip_root_updates, statistics::units::Count::get(),
+               "tree updates that stopped at an on-chip root")
 {
 }
 

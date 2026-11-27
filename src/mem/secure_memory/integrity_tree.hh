@@ -334,6 +334,12 @@ class IntegrityTree : public SimObject
     // ePMP: only addresses inside a registered region get protection
     EPMP *epmp = nullptr;
     std::unordered_set<PacketPtr> bypassed;
+
+    // per-region tree roots held on-chip in the ePMP (paper Sec. 3.1)
+    std::unordered_set<Addr> onchip_roots;
+    std::unordered_map<Addr, Addr> region_roots; // region start -> root
+    Addr regionRoot(Addr data_addr);
+    bool isOnChipRoot(Addr a) const { return onchip_roots.count(a) != 0; }
     bool isSecure(Addr a) const
     {
         return !epmp || epmp->lookup(a) != nullptr;
@@ -413,6 +419,8 @@ class IntegrityTree : public SimObject
         statistics::Scalar requests_processed;
         statistics::Scalar responses_processed;
         statistics::Scalar bypassed_requests;
+        statistics::Scalar onchip_root_verifications;
+        statistics::Scalar onchip_root_updates;
     };
 
     IntegrityTreeStats stats;
